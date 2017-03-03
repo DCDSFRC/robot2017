@@ -82,12 +82,15 @@ public class Robot extends IterativeRobot {
 	String autoModeSelected;
 	SendableChooser<String> chooser = new SendableChooser<>();
 	// Other variables
-	private double SHOOTER_SPEED, belt_speed, bearing, distance;
+
+	private double SHOOTER_SPEED, belt_speed, bearing;//, distance;
 	private double X, Y, Z;
 	private boolean isReversed;
 
+	GearAuto gStep;
 	private double time_elapsed;
-	private double autonomousStartTime, currenttime;
+	private double starttime, currenttime;
+
 
 	
 	/**
@@ -119,6 +122,8 @@ public class Robot extends IterativeRobot {
 		// Reverse input for left motor Controllers
 		leftB.setInverted(true);
 		leftF.setInverted(true);
+
+		leftB.setSafetyEnabled(true);
 		// Instantiate Gyro, calibrate and reset
 		// The ADXRS450 Gyro Class is specific to the gyro that is currently
 		// being used on the robot.
@@ -183,7 +188,139 @@ public class Robot extends IterativeRobot {
 		// Starts with forward drive system (collector in front)
 		isReversed = true;
 		loopTimer = 0;
-		autonomousStartTime = System.currentTimeMillis();
+
+		starttime = System.currentTimeMillis();
+	}
+
+	public void autonomousPeriodic() {
+		time_elapsed = time(starttime, System.currentTimeMillis());
+		if (time_elapsed > 15) {
+			return;
+		}
+		boolean RobotOnLeft, vision;
+		double angle = bearing();
+		double d = distance();
+		switch (autoModeSelected) {// Enums look cool
+		case "centerG":
+			if (d >= 50) {
+				gStep = GearAuto.FAR_APPROACH;
+			} else if (d <= 24) {
+				gStep = GearAuto.CLOSE_APPROACH;
+			} else if (d <= 15) {
+				gStep = GearAuto.RESET;
+			}
+			centerGearAuto();
+			break;
+		case "leftG":
+			if (time_elapsed < 3) {
+				vision = false;
+				gStep = GearAuto.DRIVE_STRAIGHT;
+			} else if (time_elapsed >= 2 && time_elapsed < 5) {
+				vision = false;
+				gStep = GearAuto.ROTATE_RIGHT;
+			} else if ((time_elapsed >= 5 && time_elapsed < 8) || (angle < 75 && angle > 45)) {
+				vision = false;
+				gStep = GearAuto.FAR_APPROACH;
+			} else if (time_elapsed >= 8 && time_elapsed < 10 || d < 20) {
+				vision = true;
+				gStep = GearAuto.CLOSE_APPROACH;
+			} else if (time_elapsed >= 10 || d < 13) {
+				vision = true;
+				gStep = GearAuto.STOP;
+			} else { // should never happen
+				vision = false;
+				System.out.println("BIG ERROR");
+			}
+			leftGearAuto(RobotOnLeft = true, vision);
+			break;
+		case "rightG":
+			if (time_elapsed < 3) {
+				vision = false;
+				gStep = GearAuto.DRIVE_STRAIGHT;
+			} else if (time_elapsed < 5) {
+				vision = false;
+				gStep = GearAuto.ROTATE_LEFT;
+			} else if ((time_elapsed < 8) || (angle < -45 && angle > -75)) {
+				vision = false;
+				gStep = GearAuto.FAR_APPROACH;
+			} else if (time_elapsed < 10 || d < 20) {
+				vision = true;
+				gStep = GearAuto.CLOSE_APPROACH;
+			} else if (time_elapsed > 10 || d < 13) {
+				vision = false;
+				gStep = GearAuto.STOP;
+			} else { // should never happen
+				vision = false;
+				System.out.println("BIG ERROR");
+			}
+			leftGearAuto(RobotOnLeft = false, vision);
+			break;
+		case "lowB": // get shooter value for shooting at a range
+			break;
+		case "highB": // probably not going to do this one
+			break;
+		default:
+			baseLineAuto();
+			break;
+		}
+		loopTimer++;
+	}
+
+	/**
+	 * Autonomous Routine for putting gear in side peg. Parameter onLeft used to
+	 * determine which way robot should turn while approaching
+	 */
+	void leftGearAuto(boolean RobotOnLeft, boolean vision) {
+		double x = xRes;
+		double curve = 0;
+		if (vision) {
+			double[] centerX = table.getNumberArray("centerX", new double[0]);
+
+			if (centerX.length >= 2) {
+				x = (centerX[0] + centerX[1]) / 2.0;
+			} else {
+				x = xRes / 2;
+			}
+			curve = curveToCenter(x);
+		}
+		double angle = bearing();
+		if (x < 0.4 * xRes || x > .6 * xRes) {
+			gStep = GearAuto.OFF_CENTER;
+		}
+
+		if (gStep == GearAuto.OFF_CENTER) {
+			X = (x - xRes / 2) / xRes;
+			Y = 0;
+			Z = 0;
+		} else if (gStep == GearAuto.DRIVE_STRAIGHT) {
+			X = 0;
+			Y = 0.9;
+			Z = 0;
+			angle *= 1.5;
+		} else if (gStep == GearAuto.ROTATE_LEFT) {
+			X = 0;
+			Y = 0;
+			Z = rotateTo(-60);
+		} else if (gStep == GearAuto.ROTATE_RIGHT) {
+			X = 0;
+			Y = 0;
+			Z = rotateTo(60);
+		} else if (gStep == GearAuto.FAR_APPROACH) {
+			X = 0;
+			Y = 0.6;
+			Z = curve;
+			angle *= 1.2;
+		} else if (gStep == GearAuto.CLOSE_APPROACH) {
+			X = 0;
+			Y = 0.3;
+			Z = curve;
+		} else if (gStep == GearAuto.STOP) {
+			X = 0;
+			Y = 0;
+			Z = 0;
+			angle = 0;
+		}
+		myRobot.mecanumDrive_Cartesian(X, Y, Z, angle);
 	}
 
 //	public void autonomousPeriodic() {
@@ -317,17 +454,19 @@ public class Robot extends IterativeRobot {
 		double x;
 		if (centerX.length >= 2) {
 			x = (centerX[0] + centerX[1]) / 2.0;
+		} else if (centerX.length == 1) {
+			x = centerX[0];
 		} else {
 			x = xRes / 2;
 		}
+		
 		double curve = -curveToCenter(x) * .7;
-		SmartDashboard.putNumber("distance", distance);
-		SmartDashboard.putNumber("bearing", bearing);
-		SmartDashboard.putNumber("x", x);
-		SmartDashboard.putNumber("curve", curve);
-		if (distance > 50) {
+
+		double d = distance();
+		double angle = bearing();
+		if (d > 50) {
 			myRobot.mecanumDrive_Cartesian(0, -0.5, curve, bearing);
-		} else if (distance > 11.5) {
+		} else if (d > 11.5) {
 			if (x < .4 * xRes) {
 				myRobot.mecanumDrive_Cartesian(-0.3, 0, curve, bearing);
 			} else if (x > 0.6 * xRes) {
@@ -335,16 +474,18 @@ public class Robot extends IterativeRobot {
 			} else {
 				myRobot.mecanumDrive_Cartesian(0, -0.3, curve, bearing);
 			}
-		} else if (distance <= 11.5) {
+		}
+
+
+
+		 else if (d < 11.5) {
 			rotateTo(ORIGINAL_ANGLE);
-		} else {
-			return;
 		}
 	}
 
 	void baseLineAuto() {
 		if (time_elapsed < 3.5) {
-			myRobot.arcadeDrive(0.6, bearing);
+			myRobot.arcadeDrive(0.6, bearing());
 		}
 	}
 
@@ -419,14 +560,15 @@ public class Robot extends IterativeRobot {
 		}
 
 		// Collector Belt Magnitude
-		belt_speed = -slider(whiteL);
-		collector.set(belt_speed);
+		double belt_speed = -slider(whiteL);
+		collector.set(belt_speed = -0.5);
 		// Mechanum Drive. Default GYRO angle = 0.0
 		if (isReversed) {
 			X = -X;
 			Y = -Y;
 		}
-		myRobot.mecanumDrive_Cartesian(X, Y, Z, bearing);
+		double angle = bearing();
+		myRobot.mecanumDrive_Cartesian(X, Y, Z, angle);
 		// Publish values used in Teleop to SmartDashboard
 		updateDashboard();
 		updateDashboard(table);
@@ -472,23 +614,27 @@ public class Robot extends IterativeRobot {
 	private void runShooter() {
 
 
-		SHOOTER_SPEED = 0;
+
+double shooter_speed = 0;
 		if (whiteR.getRawButton(buttonConstantsR[8])) {
 			shooter.set(-0.18);
 		}
 		else if (whiteR.getRawButton(buttonConstantsR[12]))
 		{
-			SHOOTER_SPEED = .25;
+			shooter_speed = .25;
 		}
 		else if (whiteR.getRawButton(buttonConstantsR[10])) {
-			SHOOTER_SPEED = .755;
+			shooter_speed = .755;
 		}
 		else if (whiteR.getRawButton(buttonConstantsR[2])) {
 			
-			SHOOTER_SPEED = roundDown(slider(whiteR), 0.1, 1.0);
+			shooter_speed = roundDown(slider(whiteR), 0.1, 1.0);
 		}
 
-		shooter.set(SHOOTER_SPEED);
+		shooter.set(shooter_speed);
+
+		SmartDashboard.putNumber("Shooter Speed", shooter_speed);
+
 	}
 
 	/**
@@ -514,29 +660,31 @@ public class Robot extends IterativeRobot {
 	}
 
 	void updateDashboard() {
-		// SmartDashboard.putNumber("X-Magnitude", X);
-		// SmartDashboard.putNumber("Y-Magnitude", Y);
-		// SmartDashboard.putNumber("Z-Rotation", Z);
-		SmartDashboard.putNumber("Bearing (Raw Gyro Angle)", bearing / GYRO_CONST);
-		SmartDashboard.putNumber("Gyro Angle", bearing);
-		SmartDashboard.putNumber("UltraSonic (Inches)", distance);
-		SmartDashboard.putNumber("Shooter Magnitude", SHOOTER_SPEED);
-		SmartDashboard.putNumber("Belt Speed", belt_speed);
+
+
+
+		SmartDashboard.putNumber("X-Magnitude", X);
+		SmartDashboard.putNumber("Y-Magnitude", Y);
+		SmartDashboard.putNumber("Z-Rotation", Z);
+		// SmartDashboard.putNumber("Bearing (Raw Gyro Angle)", bearing /
+		// GYRO_CONST);
+		// SmartDashboard.putNumber("Gyro Angle", bearing);
+		// SmartDashboard.putNumber("UltraSonic (Inches)", distance);
+		// SmartDashboard.putNumber("Shooter Magnitude", shooter_speed);
+		// SmartDashboard.putNumber("Belt Speed", belt_speed);
+
 		SmartDashboard.putBoolean("Compressor Pressure Switch On", compressor.getPressureSwitchValue());
 		SmartDashboard.putNumber("Compressor Current", compressor.getCompressorCurrent());
 	}
 
-	/**
-	 * Update readings from Gyro and Ultrasonic
-	 */
-	void sensors() {
-		// Get raw Gyro Angle
-		bearing = gyro.getAngle();
-		// Multiply gyro's angle by GRYO_CONST. Increasing GYRO_CONST will make
-		// more rapid adjustments
-		bearing *= GYRO_CONST;
-		// Get Distance From UltraSonic (in Inches)
-		distance = uss.getRangeInches();
+	double distance() {
+		SmartDashboard.putNumber("Distance", uss.getRangeInches());
+		return uss.getRangeInches();
+	}
+
+	double bearing() {
+		SmartDashboard.putNumber("Bearing", gyro.getAngle());
+		return gyro.getAngle();
 	}
 
 	/**
@@ -575,6 +723,52 @@ public class Robot extends IterativeRobot {
 
 
 	
-	
 
+
+	public void testInit() {
+		// Always reset Gyro in init methods. You don't necessarily need to
+		// calibrate.
+		gyro.calibrate();
+		gyro.reset();
+		ORIGINAL_ANGLE = gyro.getAngle();
+		SmartDashboard.putNumber("Original Gyro Angle", ORIGINAL_ANGLE);
+		// Starts with forward drive system (duh)
+		isReversed = false;
+	}
+
+	/**
+	 * This function is called periodically during test mode
+	 */
+	public void testPeriodic() {
+
+		myRobot.mecanumDrive_Cartesian(0, 0, rotateTo(90), bearing());
+		LiveWindow.run();
+	}
+
+}
+
+enum GearAuto {
+	OFF_CENTER(-1), DRIVE_STRAIGHT(0), ROTATE_LEFT(1), ROTATE_RIGHT(2), FAR_APPROACH(3), CLOSE_APPROACH(5), STOP(5), RESET(6);
+
+	private int val;
+
+	public int getValue() {
+		return val;
+	}
+
+	private GearAuto(int v) {
+		val = v;
+	}
+}
+
+enum LowBoilerAuto {
+	// TODO: Create Steps for shooting into the low boiler
+}
+
+enum HighBoilerAuto {
+	// TODO: Create steps for shooting into high goal
+}
+
+enum JoysticButtons {
+	// TODO: Map joystick to enum
 }
