@@ -208,6 +208,10 @@ public class Robot extends IterativeRobot {
 				gStep = GearAuto.CLOSE_APPROACH;
 			} else if (d <= 15) {
 				gStep = GearAuto.RESET;
+			} else if (d <= 11.5) {
+				gStep = GearAuto.STOP;
+			} else { // should never happen
+				return;
 			}
 			centerGearAuto();
 			break;
@@ -275,7 +279,6 @@ public class Robot extends IterativeRobot {
 		double curve = 0;
 		if (vision) {
 			double[] centerX = table.getNumberArray("centerX", new double[0]);
-
 			if (centerX.length >= 2) {
 				x = (centerX[0] + centerX[1]) / 2.0;
 			} else {
@@ -748,16 +751,23 @@ double shooter_speed = 0;
 }
 
 enum GearAuto {
-	OFF_CENTER(-1), DRIVE_STRAIGHT(0), ROTATE_LEFT(1), ROTATE_RIGHT(2), FAR_APPROACH(3), CLOSE_APPROACH(5), STOP(5), RESET(6);
+	OFF_CENTER(true), 
+	DRIVE_STRAIGHT(false),
+	ROTATE_LEFT(false),
+	ROTATE_RIGHT(false),
+	FAR_APPROACH(true),
+	CLOSE_APPROACH(true),
+	STOP(false),
+	RESET(false);
 
-	private int val;
+	private boolean vision;
 
-	public int getValue() {
-		return val;
+	public boolean useVision() {
+		return vision;
 	}
 
-	private GearAuto(int v) {
-		val = v;
+	private GearAuto(boolean v) {
+		vision = v;
 	}
 }
 
