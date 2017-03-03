@@ -37,7 +37,7 @@ public class Robot extends IterativeRobot {
 	private final int yRes = 360;
 	// Gyroscope (CLOCKWISE IS POSITIVE)
 	private ADXRS450_Gyro gyro;
-	private final double GYRO_CONST = 0.08;
+	private final double GYRO_CONST = 0.04;
 	private double ORIGINAL_ANGLE;
 	// Ultrasonic Sensor
 	Ultrasonic uss;
@@ -57,9 +57,10 @@ public class Robot extends IterativeRobot {
 	private double shooter_speed, belt_speed, bearing, distance;
 	private double X, Y, Z;
 	private boolean isReversed;
-	SideGearAuto step;
+	SideGearAuto sideStep;
+	CenterGearAuto centerStep;
 	private double time_elapsed;
-	private double starttime, currenttime;
+	private double autonomousStartTime, currenttime;
 
 	public Robot() {
 		NetworkTable.setTeam(835);
@@ -145,11 +146,10 @@ public class Robot extends IterativeRobot {
 		// Starts with forward drive system (collector in front)
 		isReversed = true;
 		loopTimer = 0;
-		starttime = System.currentTimeMillis();
+		autonomousStartTime = System.currentTimeMillis();
 	}
 
 	public void autonomousPeriodic() {
-		time_elapsed = time(starttime, System.currentTimeMillis());
 		if (time_elapsed > 15) {
 			return;
 		}
@@ -162,19 +162,19 @@ public class Robot extends IterativeRobot {
 		case "leftG":
 			if (time_elapsed < 3) {
 				vision = false;
-				step = SideGearAuto.DRIVE_STRAIGHT;
+				sideStep = SideGearAuto.DRIVE_STRAIGHT;
 			} else if (time_elapsed >= 2 && time_elapsed < 5) {
 				vision = false;
-				step = SideGearAuto.ROTATE_RIGHT;
+				sideStep = SideGearAuto.ROTATE_RIGHT;
 			} else if ((time_elapsed >= 5 && time_elapsed < 8) || (bearing < 75 && bearing > 45)) {
 				vision = false;
-				step = SideGearAuto.FAR_APPROACH;
+				sideStep = SideGearAuto.FAR_APPROACH;
 			} else if (time_elapsed >= 8 && time_elapsed < 10 || distance < 20) {
 				vision = true;
-				step = SideGearAuto.CLOSE_APPROACH;
+				sideStep = SideGearAuto.CLOSE_APPROACH;
 			} else if (time_elapsed >= 10 || distance < 13) {
 				vision = true;
-				step = SideGearAuto.STOP;
+				sideStep = SideGearAuto.STOP;
 			} else { // should never happen
 				vision = false;
 				System.out.println("BIG ERROR");
@@ -184,19 +184,19 @@ public class Robot extends IterativeRobot {
 		case "rightG":
 			if (time_elapsed < 3) {
 				vision = false;
-				step = SideGearAuto.DRIVE_STRAIGHT;
+				sideStep = SideGearAuto.DRIVE_STRAIGHT;
 			} else if (time_elapsed >= 2 && time_elapsed < 5) {
 				vision = false;
-				step = SideGearAuto.ROTATE_LEFT;
+				sideStep = SideGearAuto.ROTATE_LEFT;
 			} else if ((time_elapsed >= 5 && time_elapsed < 8) || (bearing < -45 && bearing > -75)) {
 				vision = false;
-				step = SideGearAuto.FAR_APPROACH;
+				sideStep = SideGearAuto.FAR_APPROACH;
 			} else if (time_elapsed >= 8 && time_elapsed < 10 || distance < 20) {
 				vision = true;
-				step = SideGearAuto.CLOSE_APPROACH;
+				sideStep = SideGearAuto.CLOSE_APPROACH;
 			} else if (time_elapsed >= 10 || distance < 13) {
 				vision = true;
-				step = SideGearAuto.STOP;
+				sideStep = SideGearAuto.STOP;
 			} else { // should never happen
 				vision = false;
 				System.out.println("BIG ERROR");
@@ -233,36 +233,36 @@ public class Robot extends IterativeRobot {
 		}
 
 		if (x < 0.4 * xRes || x > .6 * xRes) {
-			step = SideGearAuto.OFF_CENTER;
+			sideStep = SideGearAuto.OFF_CENTER;
 		}
 
-		if (step == SideGearAuto.OFF_CENTER) {
+		if (sideStep == SideGearAuto.OFF_CENTER) {
 			X = (x - xRes / 2) / xRes;
 			Y = 0;
 			Z = 0;
-		} else if (step == SideGearAuto.DRIVE_STRAIGHT) {
+		} else if (sideStep == SideGearAuto.DRIVE_STRAIGHT) {
 			X = 0;
 			Y = 0.9;
 			Z = 0;
 			bearing *= 1.5;
-		} else if (step == SideGearAuto.ROTATE_LEFT) {
+		} else if (sideStep == SideGearAuto.ROTATE_LEFT) {
 			X = 0;
 			Y = 0;
 			Z = rotateTo(-60);
-		} else if (step == SideGearAuto.ROTATE_RIGHT) {
+		} else if (sideStep == SideGearAuto.ROTATE_RIGHT) {
 			X = 0;
 			Y = 0;
 			Z = rotateTo(60);
-		} else if (step == SideGearAuto.FAR_APPROACH) {
+		} else if (sideStep == SideGearAuto.FAR_APPROACH) {
 			X = 0;
 			Y = 0.6;
 			Z = curve;
 			bearing *= 1.2;
-		} else if (step == SideGearAuto.CLOSE_APPROACH) {
+		} else if (sideStep == SideGearAuto.CLOSE_APPROACH) {
 			X = 0;
 			Y = 0.3;
 			Z = curve;
-		} else if (step == SideGearAuto.STOP) {
+		} else if (sideStep == SideGearAuto.STOP) {
 			X = 0;
 			Y = 0;
 			Z = 0;
@@ -282,14 +282,14 @@ public class Robot extends IterativeRobot {
 		} else {
 			x = xRes / 2;
 		}
-		double curve = -curveToCenter(x);
+		double curve = -curveToCenter(x) * .7;
 		SmartDashboard.putNumber("distance", distance);
 		SmartDashboard.putNumber("bearing", bearing);
 		SmartDashboard.putNumber("x", x);
-		SmartDashboard.putNumber("cur", curve);
+		SmartDashboard.putNumber("curve", curve);
 		if (distance > 50) {
-			myRobot.mecanumDrive_Cartesian(0, -0.3, curve, bearing);
-		} else if (distance < 50 && distance > 18) {
+			myRobot.mecanumDrive_Cartesian(0, -0.5, curve, bearing);
+		} else if (distance > 11.5) {
 			if (x < .4 * xRes) {
 				myRobot.mecanumDrive_Cartesian(-0.3, 0, curve, bearing);
 			} else if (x > 0.6 * xRes) {
@@ -297,9 +297,9 @@ public class Robot extends IterativeRobot {
 			} else {
 				myRobot.mecanumDrive_Cartesian(0, -0.3, curve, bearing);
 			}
-		} else if (distance <= 18 && distance > 15) {
-			myRobot.mecanumDrive_Cartesian(0, -0.3, curve, bearing);
-		} else if (distance <= 15) {
+		} else if (distance <= 11.5) {
+			rotateTo(ORIGINAL_ANGLE);
+		} else {
 			return;
 		}
 	}
@@ -451,9 +451,9 @@ public class Robot extends IterativeRobot {
 	}
 
 	void updateDashboard() {
-		SmartDashboard.putNumber("X-Magnitude", X);
-		SmartDashboard.putNumber("Y-Magnitude", Y);
-		SmartDashboard.putNumber("Z-Rotation", Z);
+		// SmartDashboard.putNumber("X-Magnitude", X);
+		// SmartDashboard.putNumber("Y-Magnitude", Y);
+		// SmartDashboard.putNumber("Z-Rotation", Z);
 		SmartDashboard.putNumber("Bearing (Raw Gyro Angle)", bearing / GYRO_CONST);
 		SmartDashboard.putNumber("Gyro Angle", bearing);
 		SmartDashboard.putNumber("UltraSonic (Inches)", distance);
@@ -533,6 +533,10 @@ enum SideGearAuto {
 	}
 }
 
+enum CenterGearAuto {
+	FAR_APPROACH, OFF_CENTER, CLOSE_APPROACH, RESET_ANGLE, STOP;
+}
+
 enum LowBoilerAuto {
-	
+
 }
