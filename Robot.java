@@ -10,6 +10,7 @@ package org.usfirst.frc.team835.robot;
 import edu.wpi.first.wpilibj.*;
 import edu.wpi.first.wpilibj.livewindow.LiveWindow;
 import edu.wpi.first.wpilibj.networktables.NetworkTable;
+import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import java.util.Arrays;
 
@@ -38,7 +39,7 @@ public class Robot extends IterativeRobot {
 	// Gyroscope
 	private ADXRS450_Gyro gyro;
 	private final double GYRO_CONST = 0.15;
-	private double ORIGIN_ANGLE;
+	private double ORIGINAL_ANGLE;
 	// Ultrasonic Sensor
 	Ultrasonic uss;
 	// Pneumatics
@@ -48,34 +49,35 @@ public class Robot extends IterativeRobot {
 	private Joystick whiteR, whiteL;
 	// Network Table
 	private NetworkTable table;
-	private double SHOOTER_SPEED, BELT_SPEED, GYRO_ANGLE;
+	// Dashboard Sendables
+	final String defaultAuto = "Default";
+	final String customAuto = "My Auto";
+	String autoSelected;
+	SendableChooser<String> chooser = new SendableChooser<>();
+	// Other variables
+	private double shooter_speed, belt_speed, bearing, distance;
 	private double X, Y, Z;
 	private boolean isReversed;
-	double x, distance, power, curve = 0;
-	double[] xvalues, areas, heights, widths;
 
 	/**
 	 * This function is run when the robot is first started up and should be
 	 * used for any initialization code.
 	 */
 	public void robotInit() {
+		// Retrieve NetworkTables
 		table = NetworkTable.getTable("GRIP/targets");
 		NetworkTable.setTeam(835);
-		
-		
 		// Instantiate Motor Controllers
 		rightB = new TalonSRX(0);
 		leftB = new TalonSRX(1);
 		rightF = new TalonSRX(2);
-		leftF = new TalonSRX(3); 
+		leftF = new TalonSRX(3);
 		// winch = new TalonSRX(6);
 		collector = new TalonSRX(4);
 		shooter = new TalonSRX(5);
-
 		// Reverse input for left motor Controllers
 		leftB.setInverted(true);
 		leftF.setInverted(true);
-
 		// Instantiate Gyro, calibrate and reset
 		// The ADXRS450 Gyro Class is specific to the gyro that is currently
 		// being used on the robot.
@@ -83,93 +85,109 @@ public class Robot extends IterativeRobot {
 		gyro = new ADXRS450_Gyro();
 		gyro.calibrate();
 		gyro.reset();
-		ORIGIN_ANGLE = gyro.getAngle();
-		SmartDashboard.putNumber("Original Gyro Angle", ORIGIN_ANGLE);
-
+		ORIGINAL_ANGLE = gyro.getAngle();
+		SmartDashboard.putNumber("Original Gyro Angle", ORIGINAL_ANGLE);
 		// Instantiate Pnuematics Components
 		ds = new DoubleSolenoid(0, 1);
 		compressor = new Compressor(0);
 		compressor.setClosedLoopControl(true);
-
 		// Instantiate Ultrasonic Sensor. The first parameter is the analog Ping
 		// Channel. The second parameter is the Analog Echo Channel
-		 uss = new Ultrasonic(0, 1);
-		 uss.setAutomaticMode(true);
-
+		uss = new Ultrasonic(0, 1);
+		uss.setAutomaticMode(true);
 		// Instantiate Joysticks
 		whiteR = new Joystick(1);
 		whiteL = new Joystick(0);
-
 		// Instantiate RobotDrive with 4 Motor Controllers
-		myRobot = new RobotDrive(leftF, leftB, rightF, rightB);		
+		myRobot = new RobotDrive(leftF, leftB, rightF, rightB);
+		// Sendable Chooser
+		chooser.addDefault("Default Auto", defaultAuto);
+		chooser.addObject("1. Gear Position Left", "leftG");
+		chooser.addObject("2. Gear Position Center", "centerG");
+		chooser.addObject("3. Gear Position Right", "rightG");
+		SmartDashboard.putData("Auto choices", chooser);
 	}
 
 	int loopTimer;
 
 	/**
-	 * The autonomousInit method is called once each time the robot enters
-	 * autonomous mode
+	 * This autonomous (along with the chooser code above) shows how to select
+	 * between different autonomous modes using the dashboard. The sendable
+	 * chooser code works with the Java SmartDashboard. If you prefer the
+	 * LabVIEW Dashboard, remove all of the chooser code and uncomment the
+	 * getString line to get the auto name from the text box below the Gyro
+	 *
+	 * You can add additional auto modes by adding additional comparisons to the
+	 * switch structure below with additional strings. If using the
+	 * SendableChooser make sure to add them to the chooser code above as well.
 	 */
-	
-	public void autonomousInit() {
-		gyro.calibrate();
-		ORIGIN_ANGLE = gyro.getAngle();
-		SmartDashboard.putNumber("Original Gyro Angle", ORIGIN_ANGLE);
-		gyro.reset();
 
-		// Starts with forward drive system (duh)
+	public void autonomousInit() {
+		autoSelected = chooser.getSelected();
+		// autoSelected = SmartDashboard.getString("Auto Selector",
+		// defaultAuto);
+		System.out.println("Auto selected: " + autoSelected);
+		SmartDashboard.putString("Autonomous Mode", autoSelected);
+		// Pre-auto stuff
+		gyro.calibrate();
+		ORIGINAL_ANGLE = gyro.getAngle();
+		SmartDashboard.putNumber("Original Gyro Angle", ORIGINAL_ANGLE);
+		gyro.reset();
+		// Starts with forward drive system (collector in front)
 		isReversed = false;
 	}
 
 	public void autonomousPeriodic() {
-		updateDashboard("Ultrasonic", uss.getRangeInches());
+		sensors();
+		switch (autoSelected) {
+		case "leftG":
+			break;
+		case "centerG":
+			centerLiftAutonomous();
+			break;
+		case "rightG":
+			break;
+		default:
+			break;
+		}
+	}
 
-		
-//		setTables(table);
-		areas = table.getNumberArray("area", new double[0]);
-		if (areas.length == 0) {
-			myRobot.arcadeDrive(0, 0.7);
+	/**
+	 * Use the x position of a rectangle to move in a straight line
+	 */
+	double curveToCenter(double pos) {
+		if (Math.abs(pos - xRes / 2) > 20) {
+			return -(pos - xRes / 2) / xRes;
+		} else {
+			return 0.0;
+		}
+	}
+
+	/**
+	 * Autonomous Routine for when the robot is positioned in the center
+	 * position
+	 */
+	void centerLiftAutonomous() {
+		// Step 0: Get Tape Contours's position from NetworkTable
+		double[] centerX = table.getNumberArray("centerX", new double[0]);
+		double x;
+		if (centerX.length >= 2) {
+			x = (centerX[0] + centerX[1]) / 2.0;
+		} else {
+			x = xRes / 2;
+		}
+		// Step 1: Approach the gear-lift at a high speed (50-80%)
+		double curve;
+		curve = curveToCenter(x);
+		if (distance > 18) {
+			myRobot.mecanumDrive_Cartesian(0, 0.8, curve, bearing);
+		} else if (distance <= 18 && distance > 15) {
+			myRobot.mecanumDrive_Cartesian(0, 0.3, curve / 2.0, bearing);
+		} else if (distance <= 15) {
+			// do nothing
 			return;
 		}
-		heights = table.getNumberArray("height", new double[0]);
-		xvalues = table.getNumberArray("centerX", new double[0]);
-		if (xvalues.length == 0) {
-			x = xRes / 2;
-		} else {
-			x = xvalues[0];
-		}
-		curve = curveToCenter(x);
-		SmartDashboard.putNumber("X", x);
-		SmartDashboard.putNumber("PreCurve", curve);
-		curve *= -Math.sqrt(2.0);
-		if (curve > 0.5) {
-			curve = 0.5;
-		}
-		if (curve < -0.5) {
-			curve = -0.5;
-		}
-		if (heights.length != 0) {
-			distance = 5 / 12 * yRes / (2 * heights[0] * Math.tan(54 * Math.PI / 180));
-		} else {
-			distance = 0;
-		}
-
-		if (distance > 0.5) {
-			power = 5.0 / 9;
-		} else {
-			power = 0;
-		}
-		SmartDashboard.putNumber("PostCurve", curve);
-		SmartDashboard.putNumber("distance", distance);
-		SmartDashboard.putNumber("power", power);
-		// power = 0;
-		// curve = 0;
-		myRobot.arcadeDrive(power, curve);
 	}
-	
-
-	
-
 
 	/**
 	 * The teleopInit method is called once each time the robot enters teleop
@@ -179,8 +197,8 @@ public class Robot extends IterativeRobot {
 		// Always reset Gyro in init methods. You don't necessarily need to
 		// calibrate.
 		gyro.calibrate();
-		ORIGIN_ANGLE = gyro.getAngle();
-		SmartDashboard.putNumber("Original Gyro Angle", ORIGIN_ANGLE);
+		ORIGINAL_ANGLE = gyro.getAngle();
+		SmartDashboard.putNumber("Original Gyro Angle", ORIGINAL_ANGLE);
 		gyro.reset();
 
 		// Starts with forward drive system (duh)
@@ -192,7 +210,7 @@ public class Robot extends IterativeRobot {
 	 * mode)
 	 */
 	public void teleopPeriodic() {
-		
+
 		updateDashboard("UltraSonic", uss.getRangeInches());
 		// Button 2 to reverse
 		if (whiteR.getRawButton(7)) {
@@ -203,9 +221,6 @@ public class Robot extends IterativeRobot {
 		X = roundDown(whiteR.getX(), 0.007, 1);
 		Y = roundDown(whiteR.getY(), 0.007, 1);
 		Z = -roundDown(whiteR.getZ(), 0.1, 1);
-
-		// Run Gyro
-		gyroscope();
 
 		// Sets shooter power output; defaults to 0
 		runShooter();
@@ -225,15 +240,15 @@ public class Robot extends IterativeRobot {
 		}
 
 		// Collector Belt Magnitude
-		BELT_SPEED = -slider(whiteL);
-		collector.set(BELT_SPEED);
+		belt_speed = -slider(whiteL);
+		collector.set(belt_speed);
 
 		// Mechanum Drive. Default GYRO angle = 0.0
 		if (isReversed) {
 			X = -X;
 			Y = -Y;
 		}
-		myRobot.mecanumDrive_Cartesian(X, Y, Z, GYRO_ANGLE);
+		myRobot.mecanumDrive_Cartesian(X, Y, Z, bearing);
 		// Publish values used in Teleop to SmartDashboard
 		updateDashboard();
 		updateDashboard(table);
@@ -266,21 +281,18 @@ public class Robot extends IterativeRobot {
 	 * Runs shooter from 0 to 1
 	 */
 	private void runShooter() {
-		SHOOTER_SPEED = 0;
-		//TODO:asdf
-		if (whiteR.getRawButton(12))
-		{
-			SHOOTER_SPEED = .25;
+		shooter_speed = 0;
+		// TODO:asdf
+		if (whiteR.getRawButton(12)) {
+			shooter_speed = .25;
+		} else if (whiteR.getRawButton(10)) {
+			shooter_speed = .755;
+		} else if (whiteR.getRawButton(2)) {
+
+			shooter_speed = roundDown(slider(whiteR), 0.1, 1.0);
 		}
-		else if (whiteR.getRawButton(10)) {
-			SHOOTER_SPEED = .755;
-		}
-		else if (whiteR.getRawButton(2)) {
-			
-			SHOOTER_SPEED = roundDown(slider(whiteR), 0.1, 1.0);
-		}
-		
-		shooter.set(SHOOTER_SPEED);
+
+		shooter.set(shooter_speed);
 	}
 
 	/**
@@ -305,18 +317,33 @@ public class Robot extends IterativeRobot {
 		return currentValue;
 	}
 
-	void updateDashboard(){
+	void updateDashboard() {
 		SmartDashboard.putNumber("X-Magnitude: ", X);
 		SmartDashboard.putNumber("Y-Magnitude: ", Y);
 		SmartDashboard.putNumber("Z-Rotation: ", Z);
-		SmartDashboard.putNumber("Bearing (Raw Gyro Angle): ", GYRO_ANGLE / GYRO_CONST);
-		SmartDashboard.putNumber("Gyro Angle: ", GYRO_ANGLE);
-		SmartDashboard.putNumber("Shooter Magnitude: ", SHOOTER_SPEED);
-		SmartDashboard.putNumber("Belt Speed: ", BELT_SPEED);
-//		SmartDashboard.putBoolean("Compressor Pressure Switch On: ", compressor.getPressureSwitchValue());
-//		SmartDashboard.putNumber("Compressor Current: ", compressor.getCompressorCurrent());
+		SmartDashboard.putNumber("Bearing (Raw Gyro Angle): ", bearing / GYRO_CONST);
+		SmartDashboard.putNumber("Gyro Angle: ", bearing);
+		SmartDashboard.putNumber("Shooter Magnitude: ", shooter_speed);
+		SmartDashboard.putNumber("Belt Speed: ", belt_speed);
+		// SmartDashboard.putBoolean("Compressor Pressure Switch On: ",
+		// compressor.getPressureSwitchValue());
+		// SmartDashboard.putNumber("Compressor Current: ",
+		// compressor.getCompressorCurrent());
 	}
-	
+
+	/**
+	 * Update readings from Gyro and Ultrasonic
+	 */
+	void sensors() {
+		// Get raw Gyro Angle
+		bearing = gyro.getAngle();
+		// Multiply gyro's angle by GRYO_CONST. Increasing GYRO_CONST will make
+		// more rapid adjustments
+		bearing *= GYRO_CONST;
+		// Get Distance From UltraSonic (in Inches)
+		distance = uss.getRangeInches();
+	}
+
 	/**
 	 * Publish Data Object to SmartDashboard
 	 */
@@ -325,9 +352,11 @@ public class Robot extends IterativeRobot {
 			SmartDashboard.putString(d.getName(), d.getData());
 		}
 	}
+
 	void updateDashboard(String name, double value) {
-			SmartDashboard.putNumber(name, value);
-		}
+		SmartDashboard.putNumber(name, value);
+	}
+
 	/**
 	 * Publishes all keys in a Network Table to SmartDashboard
 	 */
@@ -342,43 +371,6 @@ public class Robot extends IterativeRobot {
 		}
 	}
 
-	void goForward(double power) {
-		//Step 1: TODO: go forward past the airship
-		myRobot.mecanumDrive_Cartesian(0, power, 0, gyro.getAngle());
-	}
-
-	void steer() {
-		//Step 2: TODO: Rotate to a bearing facing the airship
-		if(GYRO_ANGLE < 200 || GYRO_ANGLE > 270){
-			myRobot.mecanumDrive_Cartesian(0, 0, .4, 0);
-		}
-	}
-
-	void steerForward() {
-		//Step 3: TODO: Use UltraSonic to get distance to the airship
-		int xPos = 0;
-		myRobot.mecanumDrive_Cartesian(0, .35, curveToCenter(xPos), GYRO_ANGLE);
-	}
-
-	double curveToCenter(double pos) {
-		if (Math.abs(pos - xRes / 2) > 20) {
-			return (pos - xRes / 2) / xRes;
-		} else {
-			return 0.0;
-		}
-	}
-
-	void gyroscope() {
-		// Get raw Gyro Angle
-		GYRO_ANGLE = gyro.getAngle();
-
-		// Multiply gyro's angle by GRYO_CONST. Increasing GYRO_CONST will make
-		// more rapid adjustments
-		GYRO_ANGLE *= GYRO_CONST;
-	}
-
-	
-	
 	/**
 	 * This function is called periodically during test mode
 	 */
