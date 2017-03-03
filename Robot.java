@@ -122,7 +122,7 @@ public class Robot extends IterativeRobot {
 
 		// Instantiate Pnuematics Components
 		shooterClose = new DoubleSolenoid(0, 1);
-		shooterClose = new DoubleSolenoid(2, 3);
+		agitator = new DoubleSolenoid(2, 3);
 		compressor = new Compressor(0);
 		compressor.setClosedLoopControl(true);
 
@@ -132,8 +132,8 @@ public class Robot extends IterativeRobot {
 		 uss.setAutomaticMode(true);
 
 		// Instantiate Joysticks
-		whiteR = new Joystick(1);
-		whiteL = new Joystick(0);
+		whiteR = new Joystick(0);
+		whiteL = new Joystick(1);
 
 		// Instantiate RobotDrive with 4 Motor Controllers
 		myRobot = new RobotDrive(leftF, leftB, rightF, rightB);		
@@ -197,7 +197,7 @@ public class Robot extends IterativeRobot {
 	 * mode)
 	 */
 	public void teleopPeriodic() {
-		
+		System.out.println("tele");
 		updateDashboard("UltraSonic", uss.getRangeInches());
 		// Button 7 to reverse
 		if (whiteR.getRawButton(buttonConstantsR[7])) {
@@ -226,13 +226,13 @@ public class Robot extends IterativeRobot {
 			shooterClose.set(DoubleSolenoid.Value.kForward);
 			SmartDashboard.putString("Hopper Door: ", "CLOSED");
 		}
-		ButtonType
-		if (whiteR.getButton() {
-			shooterClose.set(DoubleSolenoid.Value.kReverse);
-			SmartDashboard.putString("Hopper Door: ", "OPEN");
-		} else {
-			shooterClose.set(DoubleSolenoid.Value.kForward);
-			SmartDashboard.putString("Hopper Door: ", "CLOSED");
+		
+		if (whiteR.getRawButton(5)) {
+			agitator.set(DoubleSolenoid.Value.kReverse);
+			SmartDashboard.putString("Agitator: ", "OPEN");
+		} else if (whiteR.getRawButton(3)) {
+			agitator.set(DoubleSolenoid.Value.kForward);
+			SmartDashboard.putString("Agitator: ", "CLOSED");
 		}
 
 		// Collector Belt Magnitude
