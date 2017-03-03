@@ -275,27 +275,30 @@ public class Robot extends IterativeRobot {
 	 * Autonomous Routine for putting gear in center peg
 	 */
 	void centerGearAuto() {
-		double[] centerX = table.getNumberArray("centerX", new double[0]);
+		double[] centerX = table.getNumberArray("centerY", new double[0]);
 		double x;
 		if (centerX.length >= 2) {
 			x = (centerX[0] + centerX[1]) / 2.0;
 		} else {
 			x = xRes / 2;
 		}
-		double curve = curveToCenter(x);
-
+		double curve = -curveToCenter(x);
+		SmartDashboard.putNumber("distance", distance);
+		SmartDashboard.putNumber("bearing", bearing);
+		SmartDashboard.putNumber("x", x);
+		SmartDashboard.putNumber("cur", curve);
 		if (distance > 50) {
-			myRobot.mecanumDrive_Cartesian(0, 0.8, curve, bearing);
+			myRobot.mecanumDrive_Cartesian(0, -0.3, curve, bearing);
 		} else if (distance < 50 && distance > 18) {
-			if (x < .25 * xRes) {
-				myRobot.mecanumDrive_Cartesian(-0.5, 0, curve, bearing);
-			} else if (x > 0.75 * xRes) {
-				myRobot.mecanumDrive_Cartesian(0.5, 0, curve, bearing);
+			if (x < .4 * xRes) {
+				myRobot.mecanumDrive_Cartesian(-0.3, 0, curve, bearing);
+			} else if (x > 0.6 * xRes) {
+				myRobot.mecanumDrive_Cartesian(0.3, 0, curve, bearing);
 			} else {
-				myRobot.mecanumDrive_Cartesian(0, 0.6, curve, bearing);
+				myRobot.mecanumDrive_Cartesian(0, -0.3, curve, bearing);
 			}
 		} else if (distance <= 18 && distance > 15) {
-			myRobot.mecanumDrive_Cartesian(0, 0.6, curve, bearing);
+			myRobot.mecanumDrive_Cartesian(0, -0.3, curve, bearing);
 		} else if (distance <= 15) {
 			return;
 		}
