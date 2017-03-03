@@ -21,6 +21,7 @@ import java.util.Arrays;
  * creating this project, you must also update the manifest file in the resource
  * directory.
  */
+
 public class Robot extends IterativeRobot {
 	/**
 	 * This function is run when the robot is first started up and should be
@@ -34,7 +35,7 @@ public class Robot extends IterativeRobot {
 	// Camera Resolution
 	private final int xRes = 240;
 	private final int yRes = 360;
-	// Gyroscope
+	// Gyroscope (CLOCKWISE IS POSITIVE)
 	private ADXRS450_Gyro gyro;
 	private final double GYRO_CONST = 0.08;
 	private double ORIGINAL_ANGLE;
@@ -56,6 +57,14 @@ public class Robot extends IterativeRobot {
 	private double shooter_speed, belt_speed, bearing, distance;
 	private double X, Y, Z;
 	private boolean isReversed;
+	SideGearAuto step;
+	private double time_elapsed;
+	private double starttime, currenttime;
+
+	public Robot() {
+		NetworkTable.setTeam(835);
+		table = NetworkTable.getTable("GRIP/targets");
+	}
 
 	/**
 	 * This function is run when the robot is first started up and should be
@@ -63,8 +72,8 @@ public class Robot extends IterativeRobot {
 	 */
 	public void robotInit() {
 		// Retrieve NetworkTables
+		NetworkTable.setIPAddress("127.0.0.1");
 		table = NetworkTable.getTable("GRIP/targets");
-		NetworkTable.setTeam(835);
 		// Instantiate Motor Controllers
 		rightB = new TalonSRX(0);
 		leftB = new TalonSRX(1);
@@ -98,17 +107,17 @@ public class Robot extends IterativeRobot {
 		whiteL = new Joystick(0);
 		// Instantiate RobotDrive with 4 Motor Controllers
 		myRobot = new RobotDrive(leftF, leftB, rightF, rightB);
-		// Sendable Chooser
-		chooser.addDefault("0. Default Auto", defaultAuto);
+		// Sendable Chooser for Autonomous modes
+		chooser.addDefault("0. Default: Cross Baseline", defaultAuto);
 		chooser.addObject("1. Gear Position Left", "leftG");
 		chooser.addObject("2. Gear Position Center", "centerG");
 		chooser.addObject("3. Gear Position Right", "rightG");
-
-		SmartDashboard.putData("Auto choices", chooser);
+		chooser.addObject("4. Shoot In Low Boiler", "lowB");
+		chooser.addObject("5. Shoot In High Boiler", "highB");
+		SmartDashboard.putData("Autonomous choices", chooser);
 	}
 
 	int loopTimer;
-	long starttime, currenttime;
 
 	/**
 	 * This autonomous (along with the chooser code above) shows how to select
@@ -135,28 +144,71 @@ public class Robot extends IterativeRobot {
 		gyro.reset();
 		// Starts with forward drive system (collector in front)
 		isReversed = true;
-
 		loopTimer = 0;
 		starttime = System.currentTimeMillis();
 	}
 
 	public void autonomousPeriodic() {
-		if (time(starttime, System.currentTimeMillis()) > 15L) {
+		time_elapsed = time(starttime, System.currentTimeMillis());
+		if (time_elapsed > 15) {
 			return;
 		}
-		boolean onLeft;
+		boolean RobotOnLeft, vision;
 		sensors();
-		switch (autoModeSelected) {
-		case "leftG":
-			leftGearAuto(onLeft = true);
-			break;
+		switch (autoModeSelected) {// Enums look cool
 		case "centerG":
 			centerGearAuto();
 			break;
+		case "leftG":
+			if (time_elapsed < 3) {
+				vision = false;
+				step = SideGearAuto.DRIVE_STRAIGHT;
+			} else if (time_elapsed >= 2 && time_elapsed < 5) {
+				vision = false;
+				step = SideGearAuto.ROTATE_RIGHT;
+			} else if ((time_elapsed >= 5 && time_elapsed < 8) || (bearing < 75 && bearing > 45)) {
+				vision = false;
+				step = SideGearAuto.FAR_APPROACH;
+			} else if (time_elapsed >= 8 && time_elapsed < 10 || distance < 20) {
+				vision = true;
+				step = SideGearAuto.CLOSE_APPROACH;
+			} else if (time_elapsed >= 10 || distance < 13) {
+				vision = true;
+				step = SideGearAuto.STOP;
+			} else { // should never happen
+				vision = false;
+				System.out.println("BIG ERROR");
+			}
+			leftGearAuto(RobotOnLeft = true, vision);
+			break;
 		case "rightG":
-			leftGearAuto(onLeft = false);
+			if (time_elapsed < 3) {
+				vision = false;
+				step = SideGearAuto.DRIVE_STRAIGHT;
+			} else if (time_elapsed >= 2 && time_elapsed < 5) {
+				vision = false;
+				step = SideGearAuto.ROTATE_LEFT;
+			} else if ((time_elapsed >= 5 && time_elapsed < 8) || (bearing < -45 && bearing > -75)) {
+				vision = false;
+				step = SideGearAuto.FAR_APPROACH;
+			} else if (time_elapsed >= 8 && time_elapsed < 10 || distance < 20) {
+				vision = true;
+				step = SideGearAuto.CLOSE_APPROACH;
+			} else if (time_elapsed >= 10 || distance < 13) {
+				vision = true;
+				step = SideGearAuto.STOP;
+			} else { // should never happen
+				vision = false;
+				System.out.println("BIG ERROR");
+			}
+			leftGearAuto(RobotOnLeft = false, vision);
+			break;
+		case "lowB": // get shooter value for shooting at a range
+			break;
+		case "highB": // probably not going to do this one
 			break;
 		default:
+			baseLineAuto();
 			break;
 		}
 		loopTimer++;
@@ -166,8 +218,57 @@ public class Robot extends IterativeRobot {
 	 * Autonomous Routine for putting gear in side peg. Parameter onLeft used to
 	 * determine which way robot should turn while approaching
 	 */
-	void leftGearAuto(boolean onLeft) {
+	void leftGearAuto(boolean RobotOnLeft, boolean vision) {
+		double x = xRes;
+		double curve = 0;
+		if (vision) {
+			double[] centerX = table.getNumberArray("centerX", new double[0]);
 
+			if (centerX.length >= 2) {
+				x = (centerX[0] + centerX[1]) / 2.0;
+			} else {
+				x = xRes / 2;
+			}
+			curve = curveToCenter(x);
+		}
+
+		if (x < 0.4 * xRes || x > .6 * xRes) {
+			step = SideGearAuto.OFF_CENTER;
+		}
+
+		if (step == SideGearAuto.OFF_CENTER) {
+			X = (x - xRes / 2) / xRes;
+			Y = 0;
+			Z = 0;
+		} else if (step == SideGearAuto.DRIVE_STRAIGHT) {
+			X = 0;
+			Y = 0.9;
+			Z = 0;
+			bearing *= 1.5;
+		} else if (step == SideGearAuto.ROTATE_LEFT) {
+			X = 0;
+			Y = 0;
+			Z = rotateTo(-60);
+		} else if (step == SideGearAuto.ROTATE_RIGHT) {
+			X = 0;
+			Y = 0;
+			Z = rotateTo(60);
+		} else if (step == SideGearAuto.FAR_APPROACH) {
+			X = 0;
+			Y = 0.6;
+			Z = curve;
+			bearing *= 1.2;
+		} else if (step == SideGearAuto.CLOSE_APPROACH) {
+			X = 0;
+			Y = 0.3;
+			Z = curve;
+		} else if (step == SideGearAuto.STOP) {
+			X = 0;
+			Y = 0;
+			Z = 0;
+			bearing = 0;
+		}
+		myRobot.mecanumDrive_Cartesian(X, Y, Z, bearing);
 	}
 
 	/**
@@ -197,6 +298,12 @@ public class Robot extends IterativeRobot {
 			myRobot.mecanumDrive_Cartesian(0, 0.6, curve, bearing);
 		} else if (distance <= 15) {
 			return;
+		}
+	}
+
+	void baseLineAuto() {
+		if (time_elapsed < 3.5) {
+			myRobot.arcadeDrive(0.6, bearing);
 		}
 	}
 
@@ -265,6 +372,17 @@ public class Robot extends IterativeRobot {
 		// Publish values used in Teleop to SmartDashboard
 		updateDashboard();
 		updateDashboard(table);
+	}
+
+	/**
+	 * Tries to rotate the robot to a desired bearing
+	 */
+	double rotateTo(double desiredAngle) {
+		if (Math.abs((desiredAngle - gyro.getAngle()) / gyro.getAngle()) > 0.1) {
+			return (Math.abs(desiredAngle - gyro.getAngle()) / 120.0) * (desiredAngle < gyro.getAngle() ? -1 : 1);
+		} else {
+			return 0;
+		}
 	}
 
 	/**
@@ -338,10 +456,8 @@ public class Robot extends IterativeRobot {
 		SmartDashboard.putNumber("UltraSonic (Inches)", distance);
 		SmartDashboard.putNumber("Shooter Magnitude", shooter_speed);
 		SmartDashboard.putNumber("Belt Speed", belt_speed);
-		// SmartDashboard.putBoolean("Compressor Pressure Switch On",
-		// compressor.getPressureSwitchValue());
-		// SmartDashboard.putNumber("Compressor Current",
-		// compressor.getCompressorCurrent());
+		SmartDashboard.putBoolean("Compressor Pressure Switch On", compressor.getPressureSwitchValue());
+		SmartDashboard.putNumber("Compressor Current", compressor.getCompressorCurrent());
 	}
 
 	/**
@@ -360,7 +476,7 @@ public class Robot extends IterativeRobot {
 	/**
 	 * Gives time elapsed in seconds between two times in milliseconds
 	 */
-	long time(long start, long finish) {
+	double time(double start, double finish) {
 		return (finish - start) / 1000;
 	}
 
@@ -398,4 +514,22 @@ public class Robot extends IterativeRobot {
 		LiveWindow.run();
 	}
 
+}
+
+enum SideGearAuto {
+	OFF_CENTER(-1), DRIVE_STRAIGHT(0), ROTATE_LEFT(1), ROTATE_RIGHT(2), FAR_APPROACH(3), CLOSE_APPROACH(5), STOP(5);
+
+	private int val;
+
+	public int getValue() {
+		return val;
+	}
+
+	private SideGearAuto(int v) {
+		val = v;
+	}
+}
+
+enum LowBoilerAuto {
+	
 }
