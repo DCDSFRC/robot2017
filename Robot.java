@@ -165,6 +165,8 @@ public class Robot extends IterativeRobot {
 			} else { // should never happen
 				System.out.println("BIG ERROR");
 			}
+			auto();
+//			centerGearAuto();
 			break;
 		case "leftG":
 			if (gStep == AutoStep.STOP) {
@@ -187,6 +189,8 @@ public class Robot extends IterativeRobot {
 			} else { // should never happen
 				System.out.println("BIG ERROR");
 			}
+			auto();
+//			leftGearAuto(true);
 			break;
 		case "rightG":
 			if (gStep == AutoStep.STOP) {
@@ -209,6 +213,8 @@ public class Robot extends IterativeRobot {
 			} else { // should never happen
 				System.out.println("BIG ERROR");
 			}
+			auto();
+//			leftGearAuto(false);
 			break;
 		default:
 			if (currentAutoTime() < 5.5) {
@@ -216,9 +222,10 @@ public class Robot extends IterativeRobot {
 			} else {
 				gStep = AutoStep.STOP;
 			}
+			auto();
+//			baseLineAuto();
 			break;
 		}
-		auto();
 		loopTimer++;
 	}
 
@@ -275,7 +282,7 @@ public class Robot extends IterativeRobot {
 	/**
 	 * Autonomous Routine for putting gear in center peg
 	 */
-	void centerGearAuto(double desiredAngle) {
+	void centerGearAuto() {
 		double[] centerX = table.getNumberArray("centerY", new double[0]);
 		double x;
 		if (centerX.length >= 2) {
@@ -287,9 +294,6 @@ public class Robot extends IterativeRobot {
 		}
 		double curve = -curveToCenter(x);
 		double d = distance();
-		X = 0;
-		Y = 0;
-		Z = 0;
 		double angle = bearing();
 
 		if (d >= 50) {
@@ -307,6 +311,47 @@ public class Robot extends IterativeRobot {
 		} else if (d < 11.5) {
 			angleRotation(ORIGINAL_ANGLE);
 		}
+	}
+	
+	void leftGearAuto(boolean RobotOnLeft) {
+		double x = xRes;
+		double curve = 0;
+		if (gStep.usesVision()) {
+			double[] centerX = table.getNumberArray("centerX", new double[0]);
+			if (centerX.length >= 2) {
+				x = (centerX[0] + centerX[1]) / 2.0;
+			} else {
+				x = xRes / 2;
+			}
+			curve = curveToCenter(x);
+		}
+		double angle = bearing();
+		if (x < 0.4 * xRes || x > .6 * xRes) {
+			gStep = AutoStep.RE_CENTER;
+		}
+		X = 0;
+		Y = 0;
+		Z = curve;
+
+		if (gStep == AutoStep.RE_CENTER) {
+			X = (x - xRes / 2) / xRes;
+		} else if (gStep == AutoStep.RUN_STRAIGHT) {
+			Y = 0.9;
+			angle *= 1.5;
+		} else if (gStep == AutoStep.ROTATE_LEFT) {
+			Z = angleRotation(-60);
+		} else if (gStep == AutoStep.ROTATE_RIGHT) {
+			Z = angleRotation(60);
+		} else if (gStep == AutoStep.FAR_APPROACH) {
+			Y = 0.6;
+			angle *= 1.2;
+		} else if (gStep == AutoStep.CLOSE_APPROACH) {
+			X = 0;
+			Y = 0.3;
+		} else if (gStep == AutoStep.STOP) {
+			angle = 0;
+		}
+		myRobot.mecanumDrive_Cartesian(X, Y, Z, angle);
 	}
 
 	void baseLineAuto() {
