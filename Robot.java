@@ -79,7 +79,7 @@ public class Robot extends IterativeRobot {
 		leftB = new TalonSRX(1);
 		rightF = new TalonSRX(2);
 		leftF = new TalonSRX(3);
-		// winch = new TalonSRX(6);
+		 winch = new TalonSRX(6);
 		collector = new TalonSRX(4);
 		shooter = new TalonSRX(5);
 		// Reverse input for left motor Controllers
@@ -397,6 +397,9 @@ public class Robot extends IterativeRobot {
 			autonomousPeriodic();
 
 			return;
+		}
+		if(whiteR.getTrigger()){
+			winch.set(whiteR.getThrottle());
 		}
 		// Button to reverse
 		if (whiteR.getRawButton(7)) {
