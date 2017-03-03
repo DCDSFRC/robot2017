@@ -57,8 +57,9 @@ public class Robot extends IterativeRobot {
 	private double X, Y, Z;
 	private boolean isReversed;
 	AutoStep gStep;
-	private double autoStartTime;
+	private double autoStartTime, autoAngleTarget;
 	int loopTimer;
+	private boolean autoControl;
 
 	public Robot() {
 		NetworkTable.setTeam(835);
@@ -144,41 +145,44 @@ public class Robot extends IterativeRobot {
 	}
 
 	public void autonomousPeriodic() {
-		if (currentAutoTime() > 15) {
-			return;
-		}
 		double angle = bearing();
 		double d = distance();
+		autoAngleTarget = 0;
 		switch (autoModeSelected) {// Enums look cool
 		case "centerG":
 			if (gStep == AutoStep.STOP) {
 				break;
 			}
-			if (d >= 50) {
+			if (currentAutoTime() < 3 || d > 24) {
 				gStep = AutoStep.FAR_APPROACH;
-			} else if (d <= 24) {
+			} else if (currentAutoTime() < 6 || d <= 24) {
 				gStep = AutoStep.CLOSE_APPROACH;
-			} else if (d <= 15) {
+			} else if (currentAutoTime() < 9 || d <= 14) {
+				autoAngleTarget = 0;
 				gStep = AutoStep.RESET;
-			} else if (d <= 11.5) {
+			} else if (currentAutoTime() > 12 || d <= 11) {
 				gStep = AutoStep.STOP;
 			} else { // should never happen
-				return;
+				System.out.println("BIG ERROR");
 			}
 			break;
 		case "leftG":
 			if (gStep == AutoStep.STOP) {
 				break;
 			}
-			if (currentAutoTime() < 3) {
-				gStep = AutoStep.DRIVE_STRAIGHT;
-			} else if (currentAutoTime() >= 2 && currentAutoTime() < 5) {
+			if (currentAutoTime() < 1.0) {
+				gStep = AutoStep.RUN_STRAIGHT;
+			} else if (currentAutoTime() < 5 || !(angle < 75 && angle > 45)) {
+				autoAngleTarget = 60;
 				gStep = AutoStep.ROTATE_RIGHT;
-			} else if ((currentAutoTime() >= 5 && currentAutoTime() < 8) || (angle < 75 && angle > 45)) {
+			} else if ((currentAutoTime() < 8 && d > 24)) {
 				gStep = AutoStep.FAR_APPROACH;
-			} else if (currentAutoTime() >= 8 && currentAutoTime() < 10 || d < 20) {
+			} else if (currentAutoTime() < 12 && d > 15) {
 				gStep = AutoStep.CLOSE_APPROACH;
-			} else if (currentAutoTime() >= 10 || d < 13) {
+			} else if (currentAutoTime() < 14 || d <= 15) {
+				autoAngleTarget = 60;
+				gStep = AutoStep.RESET;
+			} else if (currentAutoTime() >= 14 || d <= 11) {
 				gStep = AutoStep.STOP;
 			} else { // should never happen
 				System.out.println("BIG ERROR");
@@ -188,23 +192,27 @@ public class Robot extends IterativeRobot {
 			if (gStep == AutoStep.STOP) {
 				break;
 			}
-			if (currentAutoTime() < 2) {
-				gStep = AutoStep.DRIVE_STRAIGHT;
+			if (currentAutoTime() < 3) {
+				gStep = AutoStep.RUN_STRAIGHT;
 			} else if (currentAutoTime() < 5) {
+				autoAngleTarget = -60;
 				gStep = AutoStep.ROTATE_LEFT;
-			} else if ((currentAutoTime() < 8) || (angle < -45 && angle > -75)) {
+			} else if ((currentAutoTime() < 8) || !(angle > -75 && angle < -45)) {
 				gStep = AutoStep.FAR_APPROACH;
-			} else if (currentAutoTime() < 10 || d < 20) {
+			} else if (currentAutoTime() < 12 || d <= 24) {
 				gStep = AutoStep.CLOSE_APPROACH;
-			} else if (currentAutoTime() > 10 || d < 13) {
+			} else if (currentAutoTime() < 14 || d <= 14) {
+				autoAngleTarget = -60;
+				gStep = AutoStep.RESET;
+			} else if (currentAutoTime() >= 14 || d <= 13) {
 				gStep = AutoStep.STOP;
 			} else { // should never happen
 				System.out.println("BIG ERROR");
 			}
 			break;
 		default:
-			if (currentAutoTime() < 6) {
-				gStep = AutoStep.DRIVE_STRAIGHT;
+			if (currentAutoTime() < 5.5) {
+				gStep = AutoStep.RUN_STRAIGHT;
 			} else {
 				gStep = AutoStep.STOP;
 			}
@@ -223,7 +231,9 @@ public class Robot extends IterativeRobot {
 		double curve = 0;
 		if (gStep.usesVision()) {
 			double[] centerX = table.getNumberArray("centerX", new double[0]);
-			if (centerX.length >= 2) {
+			if (centerX.length == 1) {
+				x = centerX[0];
+			} else if (centerX.length >= 2) {
 				x = (centerX[0] + centerX[1]) / 2.0;
 			} else {
 				x = xRes / 2;
@@ -232,30 +242,32 @@ public class Robot extends IterativeRobot {
 		}
 		X = 0;
 		Y = 0;
-		Z = 0;
+		Z = curve;
 		double angle = bearing();
 		if (x < 0.4 * xRes || x > .6 * xRes) {
 			gStep = AutoStep.RE_CENTER;
 		}
 		if (gStep == AutoStep.RE_CENTER) {
 			X = (x - xRes / 2) / xRes;
-		} else if (gStep == AutoStep.DRIVE_STRAIGHT) {
-			Y = -1.0;
-		} else if (gStep == AutoStep.ROTATE_LEFT) {
-			Z = turnToAngleValue(-60);
-		} else if (gStep == AutoStep.ROTATE_RIGHT) {
-			Z = turnToAngleValue(60);
-		} else if (gStep == AutoStep.FAR_APPROACH) {
-			Y = -0.6;
 			Z = curve;
-			angle *= 1.2;
+		} else if (gStep == AutoStep.RUN_STRAIGHT) {
+			Y = -0.75;
+		} else if (gStep == AutoStep.ROTATE_LEFT) {
+			Z = angleRotation(autoAngleTarget);
+		} else if (gStep == AutoStep.ROTATE_RIGHT) {
+			Z = angleRotation(autoAngleTarget);
+		} else if (gStep == AutoStep.FAR_APPROACH) {
+			Y = -0.5;
+			Z = curve;
+			angle *= 1.25;
 		} else if (gStep == AutoStep.CLOSE_APPROACH) {
-			Y = -0.3;
+			Y = -0.25;
 			Z = curve;
 		} else if (gStep == AutoStep.STOP) {
-			return;
+			Z = 0;
 		} else if (gStep == AutoStep.RESET) {
-			Z = turnToAngleValue(ORIGINAL_ANGLE);
+			Y = -0.15;
+			Z = angleRotation(autoAngleTarget) * 2;
 		}
 		myRobot.mecanumDrive_Cartesian(X, Y, Z, angle);
 	}
@@ -275,6 +287,9 @@ public class Robot extends IterativeRobot {
 		}
 		double curve = -curveToCenter(x);
 		double d = distance();
+		X = 0;
+		Y = 0;
+		Z = 0;
 		double angle = bearing();
 
 		if (d >= 50) {
@@ -290,13 +305,13 @@ public class Robot extends IterativeRobot {
 		} else if (d >= 15) {
 			myRobot.mecanumDrive_Cartesian(0, -0.3, curve, angle);
 		} else if (d < 11.5) {
-			turnToAngleValue(ORIGINAL_ANGLE);
+			angleRotation(ORIGINAL_ANGLE);
 		}
 	}
 
 	void baseLineAuto() {
-		if (currentAutoTime() < 3.5) {
-			myRobot.arcadeDrive(0.6, bearing());
+		if (currentAutoTime() < 5.5) {
+			myRobot.arcadeDrive(0.65, bearing());
 		}
 	}
 
@@ -323,8 +338,9 @@ public class Robot extends IterativeRobot {
 		ORIGINAL_ANGLE = gyro.getAngle();
 		SmartDashboard.putNumber("Original Gyro Angle", ORIGINAL_ANGLE);
 		gyro.reset();
-		// Starts with forward drive system (duh)
+		// Starts with forward drive system (collector in front)
 		isReversed = false;
+		autoControl = false;
 	}
 
 	/**
@@ -332,20 +348,20 @@ public class Robot extends IterativeRobot {
 	 * mode)
 	 */
 	public void teleopPeriodic() {
-		// Button 2 to reverse
+		if (autoControl == true) {
+			autonomousPeriodic();
+
+			return;
+		}
+		// Button to reverse
 		if (whiteR.getRawButton(7)) {
 			isReversed = !isReversed;
 		}
 		// Assign Directional Magnitudes
-		X = roundDown(whiteR.getX(), 0.007, 1);
-		Y = roundDown(whiteR.getY(), 0.007, 1);
-		Z = -roundDown(whiteR.getZ(), 0.1, 1);
-		// Sets shooter power output; defaults to 0
-		runShooter();
-		// Use to get jammed balls out
-		if (whiteL.getRawButton(8)) {
-			shooter.set(-0.18);
-		}
+		X = roundDown(whiteR.getX(), 0.1, 1);
+		Y = roundDown(whiteR.getY(), 0.1, 1);
+		Z = -roundDown(whiteR.getZ(), 0.2, 1);
+
 		// Mechanum Drive. Default GYRO angle = 0.0
 		if (isReversed) {
 			X = -X;
@@ -361,7 +377,7 @@ public class Robot extends IterativeRobot {
 	/**
 	 * Tries to rotate the robot to a desired bearing
 	 */
-	double turnToAngleValue(double desiredAngle) {
+	double angleRotation(double desiredAngle) {
 		if (Math.abs((desiredAngle - gyro.getAngle()) / gyro.getAngle()) > 0.1) {
 			return (Math.abs(desiredAngle - gyro.getAngle()) / 120.0) * (desiredAngle < gyro.getAngle() ? -1 : 1);
 		} else {
@@ -390,23 +406,6 @@ public class Robot extends IterativeRobot {
 	 */
 	double slider(Joystick j) {
 		return (j.getThrottle() + 1.0) / 2.0;
-	}
-
-	/**
-	 * Runs shooter from 0 to 1
-	 */
-	private void runShooter() {
-		double shooter_speed = 0;
-		// TODO:asdf
-		if (whiteR.getRawButton(12)) {
-			shooter_speed = .25;
-		} else if (whiteR.getRawButton(10)) {
-			shooter_speed = .755;
-		} else if (whiteR.getRawButton(2)) {
-			shooter_speed = roundDown(slider(whiteR), 0.1, 1.0);
-		}
-		shooter.set(shooter_speed);
-		SmartDashboard.putNumber("Shooter Speed", shooter_speed);
 	}
 
 	/**
@@ -448,8 +447,9 @@ public class Robot extends IterativeRobot {
 	}
 
 	double distance() {
+		double rangeCompensation = 9;
 		SmartDashboard.putNumber("Distance", uss.getRangeInches());
-		return uss.getRangeInches();
+		return (uss.getRangeInches() - rangeCompensation < 0 ? 0 : uss.getRangeInches() - rangeCompensation);
 	}
 
 	double bearing() {
@@ -460,6 +460,7 @@ public class Robot extends IterativeRobot {
 	/**
 	 * Gives time elapsed in seconds between two times in milliseconds
 	 */
+
 	double currentAutoTime() {
 		return ((double) System.nanoTime() - autoStartTime) / Math.pow(10, 9);
 	}
@@ -507,14 +508,14 @@ public class Robot extends IterativeRobot {
 	 */
 	public void testPeriodic() {
 
-		myRobot.mecanumDrive_Cartesian(0, 0, turnToAngleValue(90), bearing());
+		myRobot.mecanumDrive_Cartesian(0, 0, angleRotation(90), bearing());
 		LiveWindow.run();
 	}
 
 }
 
 enum AutoStep {
-	RE_CENTER(true), DRIVE_STRAIGHT(false), ROTATE_LEFT(false), ROTATE_RIGHT(false), FAR_APPROACH(true), CLOSE_APPROACH(
+	RE_CENTER(true), RUN_STRAIGHT(false), ROTATE_LEFT(false), ROTATE_RIGHT(false), FAR_APPROACH(true), CLOSE_APPROACH(
 			true), STOP(false), RESET(false);
 
 	private boolean vision;
